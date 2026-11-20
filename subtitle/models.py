@@ -53,6 +53,18 @@ MT_MODELS: dict[str, tuple[str, str]] = {
 RECOMMENDED_ASR = ["whisper", "kotoba-whisper", "sensevoice", "fsmn-vad"]
 RECOMMENDED_MT = ["hymt2", "nllb"]
 
+# 固定下载版本：repo_id -> commit。这些是开发和测试时实际用的版本，重新下载时拿到的是同一份权重
+# （仓库作者以后更新了也不受影响）。没列出的仓库下载最新版。想要最新版可以删掉对应的行。
+MODEL_REVISIONS: dict[str, str] = {
+    "Systran/faster-whisper-large-v3":        "edaa852ec7e145841d8ffdb056a99866b5f0a478",
+    "kotoba-tech/kotoba-whisper-v2.0-faster": "f44edd35eaeb2274e85ac7b31fb2c6f59ff1c4bc",
+    "tencent/Hy-MT2-7B":                      "9b0eb4e8f001def3e5ff6469a0ac96fdb39ec223",
+    "tencent/Hy-MT2-1.8B":                    "9a341cd1b679d3efd23b46e847b01745a71ed792",
+    "unsloth/Qwen3-8B-bnb-4bit":              "1deaf68f694c40dbce295da300851729d759b21a",
+    "Qwen/Qwen2.5-3B-Instruct":               "aa8e72537993ba99e69dfaafa59ed015b17504d1",
+    "facebook/nllb-200-distilled-600M":       "f8d333a098d19b4fd9a8b18f94170487ad3f821d",
+}
+
 
 def configure_hf_env(model_dir: Path) -> None:
     """让 HF 缓存指向 model_dir，避免写 C 盘。必须在 import 任何 HF 库前调用。"""
@@ -119,10 +131,12 @@ def ensure_model(
     # 延迟导入，避免未安装时在 import 阶段报错
     from huggingface_hub import snapshot_download
 
-    log.info("下载模型 %s (%s) -> %s", name, repo_id, target)
+    revision = MODEL_REVISIONS.get(repo_id)
+    log.info("下载模型 %s (%s @ %s) -> %s", name, repo_id, revision[:10] if revision else "最新版", target)
     target.mkdir(parents=True, exist_ok=True)
     snapshot_download(
         repo_id=repo_id,
+        revision=revision,
         local_dir=str(target),
         resume_download=True,          # 断点续传
         local_dir_use_symlinks=False,  # Windows 下用真实文件，避免符号链接问题

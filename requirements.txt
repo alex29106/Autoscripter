@@ -1,3 +1,4 @@
+# 从零复现（先装 CUDA 版 torch/torchaudio，再装其余）：
 #   pip install torch==2.6.0+cu124 torchaudio==2.6.0+cu124 --extra-index-url https://download.pytorch.org/whl/cu124
 #   pip install -r requirements.txt
 # Demucs(人声分离)依赖 torchaudio；funasr 为 SenseVoice 后端所需。
@@ -128,4 +129,3 @@ unidic-lite==1.0.8
 urllib3==2.8.0
 uvicorn==0.54.0
 websockets==17.4
-﻿# 从零复现（先装 CUDA 版 torch/torchaudio，再装其余）：

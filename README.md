@@ -12,7 +12,7 @@
 
 ## 1. 环境搭建
 
-### 1.1 本机验证环境（见"复现信息"一节获取精确版本）
+### 1.1 测试机环境（见"复现信息"一节获取精确版本）
 - OS: Windows 11
 - GPU: NVIDIA RTX 4060 Laptop, **8 GB 显存**
 - 驱动支持 CUDA 13.x；本项目 PyTorch 使用 **cu124** wheel（wheel 自带 CUDA 运行时，无需系统 CUDA Toolkit 匹配）
@@ -21,6 +21,15 @@
 
 ### 1.2 创建环境
 
+**推荐：一条命令**（Windows；含 ffmpeg、CUDA 12.4 版 torch/torchaudio 和全部固定版本的依赖，约 3GB 下载）：
+
+```powershell
+conda env create -f environment.yml
+conda activate subtitle-whisper
+```
+
+**或者手动装**（效果相同）：
+
 ```powershell
 conda create -n subtitle-whisper python=3.11 -y
 conda activate subtitle-whisper
@@ -28,13 +37,7 @@ conda activate subtitle-whisper
 # ffmpeg（用于解码任意音/视频）
 conda install -c conda-forge ffmpeg -y
 
-# PyTorch（CUDA 12.4 版；CPU-only 机器见下方说明）
-pip install torch --index-url https://download.pytorch.org/whl/cu124
-
-# torchaudio（Demucs 人声分离需要；与 torch 同版本同 CUDA）
-pip install torchaudio==2.6.0+cu124 --extra-index-url https://download.pytorch.org/whl/cu124
-
-# 其余依赖
+# 全部 Python 依赖（requirements.txt 里已经写了 CUDA 12.4 版 torch/torchaudio 的下载源）
 pip install -r requirements.txt
 ```
 
@@ -105,6 +108,10 @@ python main.py download --asr sensevoice      # 同时会拉 fsmn-vad
 ```
 
 运行时找不到本地模型会自动触发下载。
+
+**模型版本是固定的**：常用模型（whisper large-v3、kotoba-whisper、Hy-MT2-7B / 1.8B、Qwen3-8B、Qwen2.5-3B、NLLB）
+下载的是开发和测试时用的那个 commit（见 `subtitle/models.py` 的 `MODEL_REVISIONS`），仓库作者以后更新了也不受影响；
+其余模型（SenseVoice、fsmn-vad、whisper turbo/medium/small、Qwen2.5-7B、Hunyuan-MT）下载最新版。
 
 ---
 
@@ -346,11 +353,11 @@ ASR 与 MT **分阶段加载**：先转写完所有文件并卸载 ASR、清空�
 |---|---|---|---|
 | ≥ 18GB | 全精度（bf16，约 15GB） | fp16 | bf16 |
 | 10 ~ 18GB | bitsandbytes 8-bit（约 7.5GB） | fp16 | bf16 |
-| 6 ~ 10GB（本机 8GB） | bitsandbytes 4-bit（约 4.7GB） | ≥7GB fp16，否则 4-bit | bf16 |
+| 6 ~ 10GB（测试机 8GB） | bitsandbytes 4-bit（约 4.7GB） | ≥7GB fp16，否则 4-bit | bf16 |
 | < 6GB | 回退 NLLB-600M（**红字提示**；可以改用 `--mt hymt2-1.8b`） | 4-bit | ≥5GB bf16，否则 4-bit |
 
 7B 级全精度的门槛以前是 16GB——bf16 权重就有 15GB，16GB 的卡加上桌面占用放不下，所以提到 18GB，并加了 8-bit 一档。
-**只有 4-bit 这一档在本机实测过**；8-bit 只在 Hy-MT2-1.8B 上验证过能加载和翻译（本机放不下 7B 的 8-bit），
+**只有 4-bit 这一档在测试机（8GB）上实测过**；8-bit 只在 Hy-MT2-1.8B 上验证过能加载和翻译（8GB 放不下 7B 的 8-bit），
 全精度路径没有验证。**加载时真的失败（显存不足、bitsandbytes 不可用）也会自动回退 NLLB**，同样红字提示，
 汇总里会写“要求 X，实际用的是 nllb”。
 
@@ -421,7 +428,7 @@ eval/                   翻译回归评测脚本（评测数据 data/ 未公开�
   `--glossary` 写 `刑事様=剑士大人` 纠正；术语表只注入当前句子里出现的词条）。
 
 ## 8. 复现信息
-精确版本见 `environment.yml` 与 `requirements.txt`。本机实测关键版本：
+精确版本见 `environment.yml` 与 `requirements.txt`。测试机上的关键版本：
 
 | 组件 | 版本 |
 |---|---|
@@ -441,14 +448,19 @@ eval/                   翻译回归评测脚本（评测数据 data/ 未公开�
 | jieba | 0.42.1（译文切分用；原本就在依赖里） |
 | gradio | 6.32.0（v3 新增，图形界面） |
 
-模型在 v0 时下载（Qwen2.5-3B-Instruct commit `aa8e72537993...`）；v1 新增
-Hy-MT2-7B（commit `9b0eb4e8f001`）、Hy-MT2-1.8B（commit `9a341cd1b6`）、unsloth/Qwen3-8B-bnb-4bit
-（commit `1deaf68f69`）。各模型实际 commit 可在其本地目录对应的 `.hf_cache` 快照记录中查看。
+模型版本：常用的 7 个模型固定在开发时下载并测试过的 commit（完整编号见 `subtitle/models.py` 的
+`MODEL_REVISIONS`，v4 起；这些编号在 HuggingFace 上都核对过存在）。
 
 v1 的依赖变更只新增了 `fugashi==1.5.2`、`unidic-lite==1.0.8`（Windows cp311 有现成 wheel /
-纯数据包，无需编译器），已同步写入 `requirements.txt` 和 `environment.yml`；在现有环境里
-`pip install --dry-run -r requirements.txt` 无需安装任何包、`pip check` 无冲突。**没有在全新 conda 环境里
-完整重装验证**（需要重新下载约 3GB 的 torch 等），如需请按下方“从零复现”步骤执行。
+纯数据包，无需编译器），已同步写入 `requirements.txt` 和 `environment.yml`。
+
+**全新环境验证（v4）**：在 Windows 11 + RTX 4060 8GB 上用 `conda env create -f environment.yml` 新建环境，
+装出来的 129 个 Python 包与开发环境逐个版本一致，`pip check` 无冲突，torch 能用 CUDA；
+在这个环境里 `pip install --dry-run -r requirements.txt` 不需要再装任何包（两个依赖文件一致）。
+从 git 仓库干净克隆的项目（没有模型、转写缓存和样本）里，单元测试 56 个通过、5 个因缺少样本/缓存跳过，
+图形界面能正常启动。没有验证的：模型下载（体积太大，只核对了版本编号）、其他操作系统、其他 CUDA 版本。
+（v4 以前的 `requirements.txt` 有个问题：一行带 BOM 的注释被排到了文件末尾，pip 会报 `Invalid requirement`，
+装不上；`environment.yml` 缺 PyTorch 的下载源。v4 已修好。）
 
 v3 的依赖变更：为图形界面新增 `gradio==6.32.0` 及它带进来的 25 个包（annotated-types、brotli、fastapi、
 gradio_client、groovy、hf-gradio、httpcore、httpx、opentelemetry-api、orjson、pandas、pillow、pydantic、pydantic_core、
@@ -459,12 +471,10 @@ tzdata、uvicorn），版本都按现有环境里实际装上的写入 `requirem
 
 **从零复现**：
 ```powershell
-conda create -n subtitle-whisper python=3.11 -y
+conda env create -f environment.yml
 conda activate subtitle-whisper
-conda install -c conda-forge ffmpeg -y
-pip install torch==2.6.0+cu124 --extra-index-url https://download.pytorch.org/whl/cu124
-pip install -r requirements.txt
-python main.py download --all-recommended
+python -m unittest discover -s tests       # 可选：确认环境没问题（不需要 GPU）
+python main.py download --all-recommended  # 下载模型（固定版本）
 ```
 
 ## 9. 版本记录
@@ -474,7 +484,7 @@ python main.py download --all-recommended
 | v1 | 整句翻译（翻译单元）+ 默认模型改为 Hy-MT2-7B；日语按形态素/文节断句；保留 ？！ |
 | v2 | 单语译文自己排版（条数可以比原文少）；默认不开 VAD、不分离人声；句内停顿切分；“话没说完”才合并 |
 | v3 | 图形界面；红字/黄字提示和运行汇总；按显存选翻译精度（新增 8-bit 档）；转写缓存带识别参数哈希 |
-| v4 | 默认模型目录改为项目里的 `model/`；`download` 也读 `config.yaml` 的模型目录；粤语每条 20 字；Qwen 后端读取 `translation.generation` 解码参数 |
+| v4 | 默认模型目录改为项目里的 `model/`；`download` 也读 `config.yaml` 的模型目录；粤语每条 20 字；Qwen 后端读取 `translation.generation` 解码参数；修好 `requirements.txt`（以前 pip 会报 Invalid requirement）和 `environment.yml`（可以一条命令建环境）；常用模型固定下载版本 |
 
 ## 10. 许可证
 本项目代码以 MIT 许可证发布，见 [LICENSE](LICENSE)。用到的模型各有自己的许可证（见第 2 节的表格），下载和使用前请分别确认。
