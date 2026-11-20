@@ -1,0 +1,32 @@
+# 模型目录：只提交占位文件，模型本身不进仓库
+model/*
+!model/.gitkeep
+.cache/
+__pycache__/
+*.pyc
+.hf_cache/
+
+# 媒体文件和生成的字幕
+*.wav
+*.mp3
+*.flac
+*.m4a
+*.aac
+*.ogg
+*.mp4
+*.mkv
+*.vtt
+*.lrc
+
+# 本机样本、开发审查记录、评测数据（含测试音频的内容，不公开）
+sample/
+docs/
+eval/data/
+eval/review-*/
+eval/out/
+# 图形界面里拖进来的文件生成的字幕（python main.py gui）
+output/
+
+# 本机 AI 助手配置
+CLAUDE.md
+.claude/

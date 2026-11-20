@@ -1,0 +1,124 @@
+# ============================================================================
+# Autoscripter 配置文件
+# 本地离线语音识别 + 翻译 + 字幕生成
+# 用户可自行修改映射关系，无需改动代码。
+# ============================================================================
+
+# 模型统一下载目录：默认是项目里的 model/（相对路径按项目目录算，也可以写绝对路径）。
+# 命令行 --model-dir 会覆盖此项。
+model_dir: "model"
+
+# 默认后端
+defaults:
+  asr: whisper          # whisper / kotoba-whisper / sensevoice
+  mt: hymt2             # hymt2(默认) / hymt2-1.8b(快) / qwen3-8b / qwen3b / qwen7b / nllb / hunyuan
+  src_lang: auto
+  tgt_lang: zh
+  mode: bilingual       # bilingual / mono-src / mono-tgt
+  lang_adapt: false
+
+# --------------------------------------------------------------------------
+# 语种适配表（仅在 --lang-adapt 开启时生效）
+# key 为语种代码（ISO 639-1，中文用 zh），value 为所选 ASR 后端。
+# 命令行 --ja-asr / --zh-asr / --ko-asr 会覆盖对应项。
+# 未列出的语种一律使用 fallback。
+# --------------------------------------------------------------------------
+lang_adapt_map:
+  ja: whisper            # 日语（whisper large-v3：带标点+词级时间戳，断句/翻译更稳；
+                         #       如需 kotoba 的更低 WER，用 --ja-asr kotoba-whisper）
+  zh: sensevoice         # 中文（普通话）
+  yue: sensevoice        # 粤语
+  ko: sensevoice         # 韩语
+  fallback: whisper      # 其他语种
+
+# --------------------------------------------------------------------------
+# 断句参数
+# --------------------------------------------------------------------------
+segmentation:
+  max_chars:
+    zh: 20               # 中文每条最大字符数
+    ja: 20               # 日文每条最大字符数
+    yue: 20              # 粤语（和中日文一样按字算；没写时会用 default 的 42）
+    en: 42               # 英文每条最大字符数
+    default: 42
+  max_duration_sec: 7.0  # 每条字幕最长显示秒数
+  min_duration_sec: 0.6  # 显示不足此时长的条向后面的空隙延长（不与下一条重叠）；0 关闭
+  # 日语断句估计“一条有多长”时，一个字最多算这么多秒的发音，多出来的算作停顿
+  # （Whisper 常把句内停顿算进相邻的词里，使某个词长达数秒）；0 关闭
+  max_char_sec: 1.0
+  # 日语按形态素/文节边界切分（需要 fugashi + unidic-lite）；false 或未安装时用旧的启发式规则
+  ja_morphology: true
+  # 中日粤文字幕去掉逗号/句号，用空格表示停顿（问号、感叹号保留）。这一条写死在 segmenter.CJK_LANGS 里。
+
+# --------------------------------------------------------------------------
+# 翻译参数
+# --------------------------------------------------------------------------
+translation:
+  # sentence：把一句话（可能跨多条字幕、跨 ASR 片段）整句翻译，再分配回原来的各条（默认）
+  # cue     ：旧方式，每条字幕单独翻译（12 条一批返回 JSON）
+  granularity: sentence
+  # --- 句子单元（granularity: sentence） ---
+  merge_gap_sec: 0.3       # 相邻句子间隔不超过此值、且前句无句末标点时合并成一个翻译单元
+  # 日语：只有前一句“话没说完”才合并（用形态素判断：以终助词、用言/助动词的终止形・命令形・意志形、
+  # 感叹词结尾的算说完了）。false = 旧规则（只看间隔和标点，会把各自独立的短句粘成一句）
+  merge_require_incomplete: true
+  max_unit_chars: 60       # 一个翻译单元最多多少字
+  max_unit_segments: 3     # 一个翻译单元最多由几个 ASR 片段组成
+  # context_before / context_after：给模型看的前/后单元数；不写则用各后端的实测最佳值
+  #   （Hy-MT2：只给前 3 句；Qwen：前 3 句 + 后 2 句；旧版 Hunyuan-MT：不给）
+  # 单语译文文件的显示方式：
+  #   sentence（默认）= 译文自己排版，不要求与原文条一一对应：整句放得下就只出一条（时间从这句的
+  #                     第一条原文条到最后一条），放不下就在译文的标点/词边界切成尽量少的几条。
+  #                     单语文件的条数因此可以比原文/双语文件少。
+  #   repeat（旧）    = 条数与原文相同；整句不超过每条字数上限时，这句的每一条都显示整句
+  #   split（旧）     = 条数与原文相同；与双语文件一样按各条原文字数比例切分
+  # sentence 方式按规则排不出来时（译文太长或太短），宁可某条超字数也不把同一段译文放两遍；
+  # 译文短到切不开时后一条“延续显示”同一段文字。两种情况都会计数并红字提示。
+  mono_display: sentence
+  # 翻译模型精度：auto = 按显存自动选（>=18GB 全精度，>=10GB bitsandbytes 8-bit，否则 4-bit；
+  # 小模型门槛更低，见 subtitle/vram.py）；也可以写 full / int8 / nf4 强制。命令行 --mt-precision 优先
+  precision: auto
+  # 连续这么多句都因为翻译模型出错（不是译文不合格）而只能保留原文时，停止翻译这个文件并记为失败；0 = 不停止
+  max_consecutive_errors: 3
+  generation:              # 解码参数（实测用的是贪心解码）
+    do_sample: false
+    repetition_penalty: 1.05
+  # --- 逐条模式（granularity: cue）及 Qwen 后端共用 ---
+  batch_size: 12         # 每批翻译条数
+  context_lines: 3       # 附带的前后上下文条数（逐条翻译时帮助理解）
+  prompt_file: "prompts/translate.txt"
+
+# --------------------------------------------------------------------------
+# ASR 参数
+# --------------------------------------------------------------------------
+asr:
+  # 下面这些参数改了以后会重新转写（转写缓存的文件名里带参数哈希；等于这里的默认值时不带）。图形界面（python main.py gui）的“高级参数”里也能临时改。
+  # VAD（Silero）预过滤。默认关闭：人声音量很小的音频里 VAD 在任何阈值下都可能
+  # 检测不到语音，整段内容在转写前就被丢掉；
+  # 开着还会让词级时间戳出现数秒的空洞。关闭后由下面的幻听抑制 + 段级质量过滤兜底。命令行 --vad 可临时打开。
+  # --lang-adapt 的语种检测也跟随这一项。
+  vad_filter: false
+  # 打开 VAD 时的阈值：越低越灵敏（faster-whisper 默认 0.5）
+  vad_threshold: 0.2
+  vad_min_silence_ms: 700   # 小于此长度的静音不切分，避免把一句话切碎
+  word_timestamps: true
+  detect_seconds: 30     # 语种检测取音频前 N 秒
+  beam_size: 5
+  # 抑制幻听（对 BGM/音效多、需关 VAD 的音频尤其有用）
+  condition_on_previous_text: false   # 关闭上文条件，避免重复幻听循环
+  no_speech_threshold: 0.6
+  compression_ratio_threshold: 2.4
+  log_prob_threshold: -1.0
+  hallucination_silence_threshold: 2.0  # 关 VAD 时跳过疑似静音处的幻听
+  # 段级质量过滤（丢弃疑似噪声/幻听的字幕条）。丢掉的段数会在运行时显示出来，也记在转写缓存里。
+  # 注意：小音量语音里拖长的词也可能被当成幻听丢掉（只是推测、没验证），
+  # 怀疑丢了内容时可以调这几个值再跑一次
+  drop_no_speech_prob: 0.85   # no_speech 概率高于此值的段丢弃
+  drop_avg_logprob: -1.2      # 平均对数概率低于此值的段丢弃
+  drop_compression_ratio: 2.5 # 压缩率高于此值的段（高重复音效/幻听）丢弃
+
+# --------------------------------------------------------------------------
+# 语言代码显示映射：内部统一用 ISO 639-1，输出文件名时中文写 cn
+# --------------------------------------------------------------------------
+lang_code_display:
+  zh: cn                 # 中文文件名后缀用 cn
